@@ -202,6 +202,75 @@ def build_body_from_draft(
     return "".join(body)
 
 
+def build_body_from_markdown(markdown_path: Path) -> str:
+    lines = markdown_path.read_text(encoding="utf-8").splitlines()
+    body: list[str] = []
+    paragraph_buffer: list[str] = []
+    list_buffer: list[str] = []
+
+    def flush_paragraph() -> None:
+        if paragraph_buffer:
+            body.append(f"<p>{' '.join(inline_md(text) for text in paragraph_buffer)}</p>")
+            paragraph_buffer.clear()
+
+    def flush_list() -> None:
+        if list_buffer:
+            body.append("<ul>" + "".join(f"<li>{inline_md(item)}</li>" for item in list_buffer) + "</ul>")
+            list_buffer.clear()
+
+    for raw_line in lines:
+        line = raw_line.lstrip("\ufeff").rstrip()
+
+        if not line.strip():
+            flush_paragraph()
+            flush_list()
+            continue
+
+        if line.startswith("# "):
+            flush_paragraph()
+            flush_list()
+            continue
+
+        heading2_match = re.match(r"^##\s+(.+)$", line)
+        if heading2_match:
+            flush_paragraph()
+            flush_list()
+            body.append(f"<h2>{inline_md(heading2_match.group(1))}</h2>")
+            continue
+
+        heading3_match = re.match(r"^###\s+(.+)$", line)
+        if heading3_match:
+            flush_paragraph()
+            flush_list()
+            body.append(f"<h3>{inline_md(heading3_match.group(1))}</h3>")
+            continue
+
+        if re.match(r"^---+$", line):
+            flush_paragraph()
+            flush_list()
+            body.append("<hr>")
+            continue
+
+        bullet_match = re.match(r"^-\s+(.+)$", line)
+        if bullet_match:
+            flush_paragraph()
+            list_buffer.append(bullet_match.group(1))
+            continue
+
+        numbered_match = re.match(r"^\d+\.\s+(.+)$", line)
+        if numbered_match:
+            flush_paragraph()
+            list_buffer.append(numbered_match.group(1))
+            continue
+
+        flush_list()
+        paragraph_buffer.append(line.strip())
+
+    flush_paragraph()
+    flush_list()
+    return "".join(body)
+
+
 def build_wxr(title: str, body_html: str, post_date: datetime) -> str:
     pub_date = post_date.strftime("%a, %d %b %Y %H:%M:%S +0000")
     post_date_text = post_date.strftime("%Y-%m-%d %H:%M:%S")
@@ -254,9 +323,9 @@ def main() -> int:
     )
     parser.add_argument(
         "--mode",
-        choices=["pages", "article"],
+        choices=["pages", "article", "markdown"],
         default="pages",
-        help="pages: import hosted page PNGs. article: import draft text and hosted illustration PNGs.",
+        help="pages: import hosted page PNGs. article: import draft text and hosted illustration PNGs. markdown: import a plain Markdown article.",
     )
     parser.add_argument(
         "--draft",
@@ -307,7 +376,9 @@ def main() -> int:
     args = parser.parse_args()
 
     out_path = Path(args.out).resolve()
-    if args.mode == "article":
+    if args.mode == "markdown":
+        body_html = build_body_from_markdown(Path(args.draft).resolve())
+    elif args.mode == "article":
         body_html = build_body_from_draft(
             Path(args.draft).resolve(),
             Path(args.figure_map).resolve(),

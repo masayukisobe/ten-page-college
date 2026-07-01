@@ -3,6 +3,7 @@ series/**/preview*.pdf
 series/**/preview.html
 series/**/*note_import*.xml
 series/**/*.zip
+brand/**/*_wxr.xml
 
 # Local caches
 __pycache__/
