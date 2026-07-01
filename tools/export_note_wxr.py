@@ -202,7 +202,7 @@ def build_body_from_draft(
     return "".join(body)
 
 
-def build_body_from_markdown(markdown_path: Path) -> str:
+def build_body_from_markdown(markdown_path: Path, image_base_url: str | None = None) -> str:
     lines = markdown_path.read_text(encoding="utf-8").splitlines()
     body: list[str] = []
     paragraph_buffer: list[str] = []
@@ -229,6 +229,17 @@ def build_body_from_markdown(markdown_path: Path) -> str:
         if line.startswith("# "):
             flush_paragraph()
             flush_list()
+            continue
+
+        image_match = re.match(r"^!\[(.+?)\]\((.+?)\)$", line)
+        if image_match:
+            flush_paragraph()
+            flush_list()
+            alt = image_match.group(1)
+            src = image_match.group(2)
+            if image_base_url:
+                src = image_url(src, image_base_url)
+            body.append(f'<figure><img src="{html.escape(src)}" alt="{html.escape(alt)}"></figure>')
             continue
 
         heading2_match = re.match(r"^##\s+(.+)$", line)
@@ -377,7 +388,7 @@ def main() -> int:
 
     out_path = Path(args.out).resolve()
     if args.mode == "markdown":
-        body_html = build_body_from_markdown(Path(args.draft).resolve())
+        body_html = build_body_from_markdown(Path(args.draft).resolve(), args.image_base_url)
     elif args.mode == "article":
         body_html = build_body_from_draft(
             Path(args.draft).resolve(),
