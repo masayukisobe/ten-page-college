@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import html
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -41,6 +42,140 @@ def build_body_from_images(
         alt = file.stem
         lines.append(f'<p><img src="{html.escape(src)}" alt="{html.escape(alt)}"></p>')
     return "\n".join(lines)
+
+
+def parse_figure_map(preview_script_path: Path) -> dict[str, str]:
+    text = preview_script_path.read_text(encoding="utf-8")
+    entries = re.findall(r'^\s*"([^"]+)"\s*=\s*"([^"]+)"', text, re.MULTILINE)
+    return {caption: src for caption, src in entries}
+
+
+def inline_md(text: str) -> str:
+    encoded = html.escape(text)
+    return re.sub(r"`([^`]+)`", r"<code>\1</code>", encoded)
+
+
+def normalize_caption(caption: str) -> str:
+    return caption.replace("」と「", " と ")
+
+
+def image_url(src: str, image_base_url: str) -> str:
+    base = normalize_base_url(image_base_url)
+    if src.startswith("images/"):
+        return base + src.removeprefix("images/")
+    return base + src
+
+
+def build_body_from_draft(
+    draft_path: Path,
+    figure_map_path: Path,
+    image_base_url: str,
+    *,
+    limit_figures: int | None = None,
+    include_test_intro: bool = False,
+) -> str:
+    figure_map = parse_figure_map(figure_map_path)
+    lines = draft_path.read_text(encoding="utf-8").splitlines()
+    body: list[str] = []
+    in_code = False
+    code_buffer: list[str] = []
+    figure_count = 0
+    current_section = ""
+
+    if include_test_intro:
+        body.extend(
+            [
+                "<p>Lightweight note import test page.</p>",
+                "<p>This page checks whether note can fetch hosted illustration image URLs while preserving article text.</p>",
+            ]
+        )
+
+    for raw_line in lines:
+        line = raw_line.rstrip()
+
+        if line.startswith("```"):
+            if not in_code:
+                in_code = True
+                code_buffer = []
+            else:
+                in_code = False
+                body.append(f"<pre><code>{html.escape(chr(10).join(code_buffer))}</code></pre>")
+            continue
+
+        if in_code:
+            code_buffer.append(line)
+            continue
+
+        if not line.strip():
+            continue
+
+        if line.startswith("# "):
+            continue
+
+        image_match = re.match(r"^!\[(.+?)\]\((.+?)\)$", line)
+        if image_match:
+            alt = image_match.group(1)
+            src = image_url(image_match.group(2), image_base_url)
+            body.append(f'<figure><img src="{html.escape(src)}" alt="{html.escape(alt)}"></figure>')
+            continue
+
+        heading2_match = re.match(r"^##\s+(.+)$", line)
+        if heading2_match:
+            current_section = heading2_match.group(1)
+            body.append(f"<h2>{inline_md(current_section)}</h2>")
+            continue
+
+        heading3_match = re.match(r"^###\s+(.+)$", line)
+        if heading3_match:
+            body.append(f"<h3>{inline_md(heading3_match.group(1))}</h3>")
+            continue
+
+        if re.match(r"^---+$", line):
+            continue
+
+        figure_match = re.match(r"^\[ここに「(.+)」.*\]$", line)
+        if figure_match:
+            figure_count += 1
+            if limit_figures is not None and figure_count > limit_figures:
+                break
+
+            caption = normalize_caption(figure_match.group(1))
+            mapped_src = figure_map.get(caption)
+            if mapped_src:
+                src = image_url(mapped_src, image_base_url)
+                body.append(
+                    '<figure>'
+                    f'<img src="{html.escape(src)}" alt="{html.escape(caption)}">'
+                    f"<figcaption>図{figure_count}: {inline_md(caption)}</figcaption>"
+                    "</figure>"
+                )
+            else:
+                body.append(f"<p>図{figure_count}: {inline_md(caption)}</p>")
+            continue
+
+        bullet_match = re.match(r"^-\s+(.+)$", line)
+        if bullet_match:
+            body.append(f"<p>・{inline_md(bullet_match.group(1))}</p>")
+            continue
+
+        if current_section == "重要用語10個":
+            term_match = re.match(r"^(\d+)\.\s+(.+)$", line)
+            if term_match:
+                body.append(f"<h3>{term_match.group(1)}. {inline_md(term_match.group(2))}</h3>")
+                continue
+
+        if current_section == "巻末クイズ":
+            quiz_match = re.match(r"^(\d+)\.\s+(.+)$", line)
+            if quiz_match:
+                body.append(f"<p><strong>Q{quiz_match.group(1)}.</strong> {inline_md(quiz_match.group(2))}</p>")
+                continue
+
+        body.append(f"<p>{inline_md(line.strip())}</p>")
+
+    if in_code:
+        body.append(f"<pre><code>{html.escape(chr(10).join(code_buffer))}</code></pre>")
+
+    return "\n".join(body)
 
 
 def build_wxr(title: str, body_html: str, post_date: datetime) -> str:
@@ -91,17 +226,33 @@ def build_wxr(title: str, body_html: str, post_date: datetime) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Create a WordPress WXR file for note import using hosted PNG pages."
+        description="Create a WordPress WXR file for note import."
+    )
+    parser.add_argument(
+        "--mode",
+        choices=["pages", "article"],
+        default="pages",
+        help="pages: import hosted page PNGs. article: import draft text and hosted illustration PNGs.",
+    )
+    parser.add_argument(
+        "--draft",
+        default="series/semicon-computer/01/draft.md",
+        help="Markdown draft used when --mode article is selected.",
+    )
+    parser.add_argument(
+        "--figure-map",
+        default="tools/build_article_preview.ps1",
+        help="Preview script containing the caption-to-image map used when --mode article is selected.",
     )
     parser.add_argument(
         "--image-dir",
         default="docs/semicon-001",
-        help="Directory containing PNG pages to reference from the imported article.",
+        help="Directory containing PNG pages to reference when --mode pages is selected.",
     )
     parser.add_argument(
         "--image-base-url",
         required=True,
-        help="Public HTTPS URL prefix where the PNG files are hosted.",
+        help="Public HTTPS URL prefix where the PNG files are hosted. For --mode article, point this to the illustration image directory.",
     )
     parser.add_argument(
         "--title",
@@ -117,7 +268,7 @@ def main() -> int:
         "--limit",
         type=int,
         default=None,
-        help="Only include the first N PNG files. Useful for import tests.",
+        help="For --mode pages, only include the first N PNG files. For --mode article, stop after N figures.",
     )
     parser.add_argument(
         "--test-intro",
@@ -126,14 +277,22 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    image_dir = Path(args.image_dir).resolve()
     out_path = Path(args.out).resolve()
-    body_html = build_body_from_images(
-        image_dir,
-        args.image_base_url,
-        limit=args.limit,
-        include_test_intro=args.test_intro,
-    )
+    if args.mode == "article":
+        body_html = build_body_from_draft(
+            Path(args.draft).resolve(),
+            Path(args.figure_map).resolve(),
+            args.image_base_url,
+            limit_figures=args.limit,
+            include_test_intro=args.test_intro,
+        )
+    else:
+        body_html = build_body_from_images(
+            Path(args.image_dir).resolve(),
+            args.image_base_url,
+            limit=args.limit,
+            include_test_intro=args.test_intro,
+        )
     wxr = build_wxr(args.title, body_html, datetime.now(timezone.utc))
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
