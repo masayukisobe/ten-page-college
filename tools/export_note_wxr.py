@@ -73,27 +73,40 @@ def build_body_from_draft(
     *,
     limit_figures: int | None = None,
     include_test_intro: bool = False,
+    include_captions: bool = False,
 ) -> str:
     figure_map = parse_figure_map(figure_map_path)
     lines = draft_path.read_text(encoding="utf-8").splitlines()
     body: list[str] = []
+    paragraph_buffer: list[str] = []
     in_code = False
     code_buffer: list[str] = []
     figure_count = 0
     current_section = ""
 
+    def flush_paragraph() -> None:
+        if not paragraph_buffer:
+            return
+        chunks: list[str] = []
+        for i in range(0, len(paragraph_buffer), 3):
+            chunks.append("<br>".join(inline_md(text) for text in paragraph_buffer[i : i + 3]))
+        for chunk in chunks:
+            body.append(f"<p>{chunk}</p>")
+        paragraph_buffer.clear()
+
     if include_test_intro:
         body.extend(
             [
-                "<p>Lightweight note import test page.</p>",
-                "<p>This page checks whether note can fetch hosted illustration image URLs while preserving article text.</p>",
+                "<p>noteインポート検証用の記事です。</p>",
+                "<p>本文テキストと挿絵画像が、通常記事として自然に入るかを確認します。</p>",
             ]
         )
 
     for raw_line in lines:
-        line = raw_line.rstrip()
+        line = raw_line.lstrip("\ufeff").rstrip()
 
         if line.startswith("```"):
+            flush_paragraph()
             if not in_code:
                 in_code = True
                 code_buffer = []
@@ -110,10 +123,12 @@ def build_body_from_draft(
             continue
 
         if line.startswith("# "):
+            flush_paragraph()
             continue
 
         image_match = re.match(r"^!\[(.+?)\]\((.+?)\)$", line)
         if image_match:
+            flush_paragraph()
             alt = image_match.group(1)
             src = image_url(image_match.group(2), image_base_url)
             body.append(f'<figure><img src="{html.escape(src)}" alt="{html.escape(alt)}"></figure>')
@@ -121,20 +136,24 @@ def build_body_from_draft(
 
         heading2_match = re.match(r"^##\s+(.+)$", line)
         if heading2_match:
+            flush_paragraph()
             current_section = heading2_match.group(1)
             body.append(f"<h2>{inline_md(current_section)}</h2>")
             continue
 
         heading3_match = re.match(r"^###\s+(.+)$", line)
         if heading3_match:
+            flush_paragraph()
             body.append(f"<h3>{inline_md(heading3_match.group(1))}</h3>")
             continue
 
         if re.match(r"^---+$", line):
+            flush_paragraph()
             continue
 
         figure_match = re.match(r"^\[ここに「(.+)」.*\]$", line)
         if figure_match:
+            flush_paragraph()
             figure_count += 1
             if limit_figures is not None and figure_count > limit_figures:
                 break
@@ -143,35 +162,38 @@ def build_body_from_draft(
             mapped_src = figure_map.get(caption)
             if mapped_src:
                 src = image_url(mapped_src, image_base_url)
-                body.append(
-                    '<figure>'
-                    f'<img src="{html.escape(src)}" alt="{html.escape(caption)}">'
-                    f"<figcaption>図{figure_count}: {inline_md(caption)}</figcaption>"
-                    "</figure>"
-                )
+                figure_html = f'<figure><img src="{html.escape(src)}" alt="{html.escape(caption)}">'
+                if include_captions:
+                    figure_html += f"<figcaption>図{figure_count}: {inline_md(caption)}</figcaption>"
+                figure_html += "</figure>"
+                body.append(figure_html)
             else:
                 body.append(f"<p>図{figure_count}: {inline_md(caption)}</p>")
             continue
 
         bullet_match = re.match(r"^-\s+(.+)$", line)
         if bullet_match:
+            flush_paragraph()
             body.append(f"<p>・{inline_md(bullet_match.group(1))}</p>")
             continue
 
         if current_section == "重要用語10個":
             term_match = re.match(r"^(\d+)\.\s+(.+)$", line)
             if term_match:
+                flush_paragraph()
                 body.append(f"<h3>{term_match.group(1)}. {inline_md(term_match.group(2))}</h3>")
                 continue
 
         if current_section == "巻末クイズ":
             quiz_match = re.match(r"^(\d+)\.\s+(.+)$", line)
             if quiz_match:
+                flush_paragraph()
                 body.append(f"<p><strong>Q{quiz_match.group(1)}.</strong> {inline_md(quiz_match.group(2))}</p>")
                 continue
 
-        body.append(f"<p>{inline_md(line.strip())}</p>")
+        paragraph_buffer.append(line.strip())
 
+    flush_paragraph()
     if in_code:
         body.append(f"<pre><code>{html.escape(chr(10).join(code_buffer))}</code></pre>")
 
@@ -275,6 +297,11 @@ def main() -> int:
         action="store_true",
         help="Add short test-introduction paragraphs before images.",
     )
+    parser.add_argument(
+        "--captions",
+        action="store_true",
+        help="Add figcaptions under illustration images in article mode.",
+    )
     args = parser.parse_args()
 
     out_path = Path(args.out).resolve()
@@ -285,6 +312,7 @@ def main() -> int:
             args.image_base_url,
             limit_figures=args.limit,
             include_test_intro=args.test_intro,
+            include_captions=args.captions,
         )
     else:
         body_html = build_body_from_images(
