@@ -41,7 +41,7 @@ def build_body_from_images(
         src = base + file.name
         alt = file.stem
         lines.append(f'<p><img src="{html.escape(src)}" alt="{html.escape(alt)}"></p>')
-    return "\n".join(lines)
+    return "".join(lines)
 
 
 def parse_figure_map(preview_script_path: Path) -> dict[str, str]:
@@ -199,7 +199,7 @@ def build_body_from_draft(
     if in_code:
         body.append(f"<pre><code>{html.escape(chr(10).join(code_buffer))}</code></pre>")
 
-    return "\n".join(body)
+    return "".join(body)
 
 
 def build_wxr(title: str, body_html: str, post_date: datetime) -> str:
