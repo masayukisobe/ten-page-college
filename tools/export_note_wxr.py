@@ -89,7 +89,7 @@ def build_body_from_draft(
             return
         chunks: list[str] = []
         for i in range(0, len(paragraph_buffer), 3):
-            chunks.append("<br>".join(inline_md(text) for text in paragraph_buffer[i : i + 3]))
+            chunks.append(" ".join(inline_md(text) for text in paragraph_buffer[i : i + 3]))
         for chunk in chunks:
             body.append(f"<p>{chunk}</p>")
         paragraph_buffer.clear()
@@ -138,6 +138,8 @@ def build_body_from_draft(
         if heading2_match:
             flush_paragraph()
             current_section = heading2_match.group(1)
+            if current_section != "はじめに":
+                body.append("<hr>")
             body.append(f"<h2>{inline_md(current_section)}</h2>")
             continue
 
