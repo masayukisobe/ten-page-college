@@ -9,6 +9,7 @@ brand/**/*_wxr.xml
 __pycache__/
 .pytest_cache/
 .venv/
+.serena/
 node_modules/
 
 # OS/editor noise

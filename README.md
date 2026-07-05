@@ -31,14 +31,100 @@
 
 本文制作とレビューの運用は [policies/draft-writing-policy.md](policies/draft-writing-policy.md) を参照してください。
 
+## Codexで自動制作プロセスを使う
+
+新しいCodexセッションでは、リポジトリルート `/home/masayuki/ten-page-college` で始めます。
+
+このリポジトリには repo skill として `$ten-page-college` があります。巻制作、推敲、レビュー反映、HTML/PDF生成、品質確認をまとめて回したいときは、このskillを明示して依頼します。
+
+依頼例:
+
+```text
+$ten-page-college
+series/semicon-computer/03 の制作を進めてください。
+project.md、series_plan.md、handoff.md、policies/、structure.md を読み、
+abstract-0x.md -> draft-0x.md -> review-0x.md -> draft反映 -> draft.md/preview.html/PDF生成 -> 品質チェック
+まで実行してください。
+```
+
+既存巻を推敲する場合:
+
+```text
+$ten-page-college
+series/semicon-computer/02 を、policies/final-quality-checklist.md に沿って再レビューし、
+必要な編集レベルをページごとに判定して、abstract、review、draftへ反映してください。
+最後に draft.md、preview.html、PDFを再生成し、check_volume_quality.py で確認してください。
+```
+
+Codexは最初に次を読む想定です。
+
+- `project.md`
+- `series_plan.md`
+- `handoff.md`
+- `policies/draft-writing-policy.md`
+- `policies/reader-conviction-perspective.md`
+- `policies/intellectual-delight-perspective.md`
+- `policies/final-quality-checklist.md`
+- 対象巻の `structure.md`
+
+自動生成の機械部分は、以下のコマンドで再実行できます。
+
+```bash
+rtk python3 tools/build_volume.py \
+  --volume series/semicon-computer/02 \
+  --pdf output/pdf/semicon-computer-02-digital-data.pdf \
+  --check
+```
+
+PDFに特定の修正が入ったか確認したい場合:
+
+```bash
+rtk python3 tools/check_volume_quality.py \
+  --volume series/semicon-computer/02 \
+  --pdf output/pdf/semicon-computer-02-digital-data.pdf \
+  --require-pdf \
+  --expect-pdf-text "圧縮は、くり返し、辞書、知覚を使い分ける"
+```
+
+主な成果物:
+
+- `series/<series>/<volume>/draft.md`: 組み上げ済みMarkdown。
+- `series/<series>/<volume>/preview.html`: 確認用HTML。
+- `output/pdf/*.pdf`: PDF出力。
+- `review-0x.md`: ページ別レビュー判断ログ。
+- `quality-check-review.md`: 巻単位の品質チェック記録。
+
+skillが新セッションで見えない場合は、Codexを再起動します。repo skill は `.agents/skills/ten-page-college/SKILL.md` にあります。
+
 ## 主要ツール
 
+- `tools/build_volume.py`: 巻ディレクトリの `intro.md` と `draft-0x.md` から `draft.md`、`preview.html`、必要に応じてPDFを生成。
+- `tools/check_volume_quality.py`: 巻ディレクトリの画像参照、本文量、PDF陳腐化、PDF内テキストを検査。
 - `tools/build_article_preview.ps1`: 記事プレビュー用のHTML生成。
 - `tools/export_preview_pdf.py`: プレビューHTMLからPDFを生成。
 - `tools/export_pdf_pages_png.py`: PDFからページPNGを生成。
 - `tools/export_note_wxr.py`: noteインポート用WXRを生成。
 
 ## 代表的な実行例
+
+第2巻の確認用原稿、HTML、PDFを生成し、品質チェックまで実行します。
+
+```bash
+rtk python3 tools/build_volume.py \
+  --volume series/semicon-computer/02 \
+  --pdf output/pdf/semicon-computer-02-digital-data.pdf \
+  --check
+```
+
+PDF内に特定の反映語があるか確認します。
+
+```bash
+rtk python3 tools/check_volume_quality.py \
+  --volume series/semicon-computer/02 \
+  --pdf output/pdf/semicon-computer-02-digital-data.pdf \
+  --require-pdf \
+  --expect-pdf-text "圧縮は、くり返し、辞書、知覚を使い分ける"
+```
 
 プレビューPDFを生成します。
 
