@@ -282,10 +282,10 @@ def build_body_from_markdown(markdown_path: Path, image_base_url: str | None = N
     return "".join(body)
 
 
-def build_wxr(title: str, body_html: str, post_date: datetime) -> str:
+def build_wxr(title: str, body_html: str, post_date: datetime, slug: str) -> str:
     pub_date = post_date.strftime("%a, %d %b %Y %H:%M:%S +0000")
     post_date_text = post_date.strftime("%Y-%m-%d %H:%M:%S")
-    slug = "semiconductor-computation-001"
+    escaped_slug = html.escape(slug)
 
     return f"""<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0"
@@ -306,7 +306,7 @@ def build_wxr(title: str, body_html: str, post_date: datetime) -> str:
       <link>https://note.com/</link>
       <pubDate>{pub_date}</pubDate>
       <dc:creator>{cdata("10 Page University")}</dc:creator>
-      <guid isPermaLink="false">{slug}</guid>
+      <guid isPermaLink="false">{escaped_slug}</guid>
       <description></description>
       <content:encoded>{cdata(body_html)}</content:encoded>
       <excerpt:encoded>{cdata("")}</excerpt:encoded>
@@ -315,7 +315,7 @@ def build_wxr(title: str, body_html: str, post_date: datetime) -> str:
       <wp:post_date_gmt>{post_date_text}</wp:post_date_gmt>
       <wp:comment_status>closed</wp:comment_status>
       <wp:ping_status>closed</wp:ping_status>
-      <wp:post_name>{slug}</wp:post_name>
+      <wp:post_name>{escaped_slug}</wp:post_name>
       <wp:status>draft</wp:status>
       <wp:post_parent>0</wp:post_parent>
       <wp:menu_order>0</wp:menu_order>
@@ -364,6 +364,11 @@ def main() -> int:
         help="Imported note article title.",
     )
     parser.add_argument(
+        "--slug",
+        default="semiconductor-computation-001",
+        help="Imported note article slug.",
+    )
+    parser.add_argument(
         "--out",
         default="series/semicon-computer/01/note_import_wxr.xml",
         help="Output WXR XML file.",
@@ -405,7 +410,7 @@ def main() -> int:
             limit=args.limit,
             include_test_intro=args.test_intro,
         )
-    wxr = build_wxr(args.title, body_html, datetime.now(timezone.utc))
+    wxr = build_wxr(args.title, body_html, datetime.now(timezone.utc), args.slug)
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(wxr, encoding="utf-8")
